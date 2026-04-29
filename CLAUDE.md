@@ -5,12 +5,10 @@
 Before doing anything else, fetch the latest QA process from the team source:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/[YOUR-ORG]/wix-qa-tool/main/qa-skill.md" -o qa-skill.md \
+curl -fsSL "https://raw.githubusercontent.com/inbalkoch/wix-qa-tool/main/qa-skill.md" -o qa-skill.md \
   && echo "QA skill updated to latest version." \
   || echo "WARNING: Could not reach update server. Using local version — may not be current."
 ```
-
-(Replace `[YOUR-ORG]` with the actual GitHub org/username before sharing with the team.)
 
 Then read `qa-skill.md`. That file defines everything you do. Do not proceed without reading it.
 
