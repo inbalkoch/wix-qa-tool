@@ -2,31 +2,35 @@
 
 Automated page QA for PMMs. Runs in Claude Code.
 
+---
+
 ## For PMMs: Getting Started
 
 1. Install Claude Code: https://claude.ai/download
 2. Download this folder (or clone this repo)
 3. Open Claude Code from this folder
-4. Type `/qa` — Claude will guide you through the one-time MCP setup, then you're ready
+4. Type `/qa` — Claude will guide you through a one-time setup (about 10 minutes), then you're ready
 
-Setup takes about 10 minutes the first time. After that, open the folder and go.
+After setup, just open the folder and go. Everything else is automatic.
 
 ---
 
 ## How Updates Work
 
-This repo is maintained by the PMM team. When the QA process is updated, the change is pushed here.
+Every time you start a QA session, Claude silently checks for updates and downloads the latest version in the background. You always have the current process — no action needed on your side.
 
-Every time you start a QA session, Claude automatically fetches the latest `qa-skill.md` from this repo before doing anything. You always have the current version — no action needed on your side.
+---
+
+## Feedback
+
+At the end of each QA session, Claude will ask one optional question about the process. Your answers (and any corrections you made during the session) are logged automatically to help improve the tool. Nothing is shared outside the Wix PMM team.
 
 ---
 
 ## For the Maintainer: Publishing Updates
 
-When you update the QA skill in your system and want to push it to all PMMs:
+To push an update to all PMMs:
 
-1. Copy your updated `qa-skill.md` into this repo folder
-2. Run: `git add qa-skill.md && git commit -m "update QA skill" && git push`
-3. Done. Every PMM gets the update on their next session.
-
-You never need to notify anyone or ask them to update. It's automatic.
+1. Update `page-qa-skill.md` in your PMM workspace
+2. Run `publish-qa-update.command`
+3. Done. Version is bumped automatically. All PMMs get the update silently on their next session.
