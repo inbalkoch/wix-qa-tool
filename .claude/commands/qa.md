@@ -22,9 +22,11 @@ Then check each of the following in order. For each one not connected, guide the
    - Test: call get_metadata with fileKey "test" — expect auth error, not connection error
    - If not connected: guide to connect the Figma integration
 
-4. **Google Workspace MCP** — needed to create the QA Google Sheet
-   - Test: try reading range `Sheet1!A1:A1` from Sheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
-   - If not connected: guide to Claude Code Settings → Integrations → enable Google Workspace
+4. **Google Workspace MCP** — needed to create the QA Google Sheet and log feedback
+   - Test A (read): try reading range `Sheet1!A1:F1` from Sheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
+   - If read fails: guide to Claude Code Settings → Integrations → enable Google Workspace
+   - Test B (write): append a test row with the value "setup-test" to `Sheet1!A:A`, then immediately delete it by clearing that cell. This confirms edit access to the Feedback Sheet.
+   - If write fails: tell the user — "Your Google account is connected but doesn't have edit access to the Feedback Sheet. Ask your QA tool admin to add your email as an Editor. You can still run QA — feedback just won't be logged until access is granted." Then continue setup.
 
 When all four are confirmed: create `.setup-complete` with today's date. Tell the user:
 
