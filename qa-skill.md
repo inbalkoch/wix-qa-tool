@@ -16,6 +16,30 @@ Check the page. Catch what's broken. Give the PMM a clear, actionable QA sheet.
 
 ---
 
+## Required Tools — Check Before Starting
+
+This skill requires four tools to be connected. Verify each before proceeding:
+
+1. **Google Drive MCP** — to read the content doc
+   - Test: list recent files via Google Drive MCP
+   - If not connected: guide the PMM to Claude Code Settings → Integrations → Google Drive
+
+2. **Browser (Claude in Chrome)** — to visit the live page and run checks
+   - Test: navigate to https://www.wix.com via browser tool
+   - If not connected: guide the PMM to enable Claude in Chrome
+
+3. **Figma MCP** — to access the design file
+   - Test: call `get_metadata` with fileKey "test" — expect an auth error, not a connection error
+   - If not connected: guide the PMM to connect the Figma integration
+
+4. **Google Workspace MCP** — to create the QA Google Sheet and log feedback
+   - Test: read range `Sheet1!A1:A1` from spreadsheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
+   - If not connected: guide the PMM to Claude Code Settings → Integrations → Google Workspace
+
+If any tool fails: stop and guide the PMM to connect it before continuing. Do not proceed with a missing tool.
+
+---
+
 ## Before You Start — Collect These From the PMM
 
 Ask the PMM to provide all of the following before you begin:
@@ -368,6 +392,35 @@ The link must appear as a plain URL in the chat, not embedded in markdown text. 
 
 ---
 
+### Feedback Collection (MANDATORY — runs after every QA)
+
+After sharing the Google Sheet link, ask the PMM exactly this:
+
+"One quick question before we close: anything in this QA that felt off, missed something, or could be clearer? (Optional — skip if nothing comes to mind)"
+
+Wait for their response. Then log to the central Feedback Sheet regardless of whether they answered — even a "no feedback" session is worth a timestamp.
+
+**Feedback Sheet ID:** `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
+
+**How to log — follow these steps exactly:**
+
+1. Call `get-sheet-values` with `spreadsheetId = "1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo"` and `range = "Feedback!A:A"`. Count the number of rows returned. Call this `n`.
+2. If `n` is 0 (sheet is empty): first write headers to `Feedback!A1:E1` using `update-sheet-values`:
+   `["Date", "PMM", "Page URL", "Type", "Comment"]`
+   Then set `n = 1` so the data row goes to row 2.
+3. Write the feedback row to `Feedback!A{n+1}:E{n+1}` using `update-sheet-values`:
+   - **Date**: today in YYYY-MM-DD format
+   - **PMM**: PMM name from the 7 inputs
+   - **Page URL**: mockup URL from the 7 inputs
+   - **Type**: `suggestion`
+   - **Comment**: the PMM's answer verbatim, or `"No feedback provided"` if they skipped
+
+4. If the write fails, tell the PMM: "I wasn't able to log your feedback to the central sheet — you may not have edit access. Let your QA admin know so they can add you."
+
+**Do not skip this step and do not fail silently.** If it fails, say so.
+
+---
+
 ## QA Rules
 
 ### Rule 1: One Issue Per Row (with exceptions)
@@ -467,6 +520,28 @@ If the page copy differs from the content doc, it is an issue — regardless of 
 **Analytics:**
 - Two CTAs on the same fold with identical event names — must be distinct
 - A search CTA (e.g., domain search) has no analytics event at all
+
+---
+
+## Feedback Logging
+
+After every QA session, Claude automatically logs feedback to a central sheet visible only to the maintainer. This is how the tool improves over time.
+
+**What gets logged:**
+- Corrections made during the session — any time a PMM says "you missed this", "that's wrong", "can you also check..."
+- The PMM's answer to the closing question: *"Anything that felt off, missed something, or could be clearer?"*
+
+Each item becomes one row: Date / PMM name / Page URL / Type (correction or suggestion) / Comment / Context.
+
+**Central Feedback Sheet:**
+`https://docs.google.com/spreadsheets/d/1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo/edit`
+
+**Where these instructions live:**
+The logging logic is in the GitHub repo at `.claude/commands/qa.md` (Step 3) and the correction-tracking rules are in the repo's `CLAUDE.md`. These files are downloaded to every PMM's folder — they run automatically, nothing the PMM needs to do.
+
+**For the maintainer:**
+- Set up email notifications in the Feedback Sheet: Tools → Notification settings → Any changes → Email immediately
+- The sheet must be shared with all PMMs (Editor access) or the logging will fail silently during setup
 
 ---
 
