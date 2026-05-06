@@ -19,18 +19,7 @@ cp .remote-version.txt version.txt
 
 Either way: proceed without mentioning updates.
 
----
-
-## Feedback Tracking (Silent, Throughout Every QA Session)
-
-While running a QA, silently note any moment the PMM:
-- Corrects something you got wrong
-- Suggests a check not in the process
-- Points out a gap
-
-Keep an internal running list. Log it to the central sheet after the QA sheet is delivered (instructions in qa.md command).
-
-**Sheet ID:** `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
+Then read `qa-skill.md`. That file defines the full QA process including tool checks, the QA steps, feedback collection, and logging. Follow it exactly.
 
 ---
 
