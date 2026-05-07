@@ -33,8 +33,10 @@ This skill requires four tools to be connected. Verify each before proceeding:
    - If not connected: guide the PMM to connect the Figma integration
 
 4. **Google Workspace MCP** — to create the QA Google Sheet and log feedback
-   - Test: read range `Sheet1!A1:A1` from spreadsheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
-   - If not connected: guide the PMM to Claude Code Settings → Integrations → Google Workspace
+   - Test (read): read range `Sheet1!A1:A1` from spreadsheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
+   - Test (write): use `update-sheet-values` to write `["setup-test"]` to `Feedback!A9999:A9999`, then immediately clear it with `[""]`
+   - If read fails: guide the PMM to Claude Code Settings → Integrations → Google Workspace
+   - If write fails (read passed but write failed): "Your Google account is connected but doesn't have edit access to the Feedback Sheet. Ask your QA admin to add you as an Editor before continuing."
 
 If any tool fails: stop and guide the PMM to connect it before continuing. Do not proceed with a missing tool.
 
@@ -117,13 +119,18 @@ Do not open the Figma URL as a browser link. Parse the URL instead:
 - `fileKey` = `AbCdEfG`
 - `nodeId` = `1:2` (replace `-` with `:`)
 
-1. Run `get_metadata` to get the file structure and identify all frames/sections
-2. For each section/fold, run `get_design_context` to get a screenshot and design details
-3. Compare each Figma frame against the corresponding section on the live page
+For each fold, follow this exact sequence — do not skip steps:
 
-**Option 2: PNG export (fallback if Figma MCP is unavailable or browser navigation to figma.com is blocked)**
+1. Run `get_metadata` to get the file structure and identify all frames/sections
+2. Run `get_design_context` on the fold to get a screenshot and design details
+3. **Before looking at the live page:** write down what the Figma shows for this fold — describe every image asset (what it shows, its position, its style), the background color, button style, layout structure, and any other notable visual elements
+4. Navigate to the corresponding section on the live page and compare against your documented notes, element by element
+5. **Image assets — never assume a match.** For each image in Figma: confirm the live page shows the same subject, same photo, same illustration. If the live page shows a different photo, a different person, a different UI screenshot, or a different illustration style — flag it as a wrong asset immediately, even if the framing looks similar
+6. If `get_design_context` does not return a clear screenshot for a specific fold, run `get_screenshot` on that node ID to get a direct visual
+
+**Option 2: PNG export (fallback if Figma MCP is unavailable)**
 Ask the PMM: "The Figma file is not accessible from my session. Please export the final approved frames as PNG — one image per fold/section — from Figma (File > Export) and share them here."
-Once the PMM shares the PNGs, compare each image fold by fold against the live page using the same checklist below.
+Once the PMM shares the PNGs: for each frame, document what Figma shows (same as step 3 above), then compare against the live page. Never skip this documentation step — it forces explicit verification rather than a passive glance.
 
 **Never skip the design check.** If Figma is inaccessible and the PMM has not yet shared PNGs, pause and ask before continuing.
 
@@ -142,15 +149,17 @@ Check each fold:
 - [ ] Container widths match
 - [ ] **Sub line count consistency:** Check the number of lines each sub/body text occupies within a fold. If all card subs in a fold are 2 lines and one card goes to 3 lines, flag it — this signals either copy is too long or a line-break/spacing issue. Compare against other cards in the same fold as the baseline.
 
-**Images & Media:**
-- [ ] Correct image is used (not a placeholder)
-- [ ] Image matches the Figma — if a different image appears on the page than what the Figma specifies, flag it as a wrong asset
+**Images & Media — active asset verification required:**
+
+For each fold, first document what Figma shows, then verify on the live page:
+- [ ] **Every image matches Figma** — same subject, same photo, same illustration. A different image is a wrong asset. Flag it even if the layout position is correct. Do not mark this done without explicitly describing what Figma shows and confirming the live page matches.
+- [ ] No placeholder images (generic stock photos, gray boxes, missing assets)
 - [ ] Image aspect ratio matches Figma
 - [ ] Image is not pixelated or blurry
 - [ ] Videos/animations are present and playing
-- [ ] Images in carousels or scrollable sections are not cut off or cropped on either desktop or mobile. Scroll through the full carousel to verify all items are fully visible.
-- [ ] **Text on images (ALL folds, not just template cards):** Read all text that appears inside or overlaid on any image across the entire page — UI screenshots, product mockups, calendar previews, app screens, feature fold illustrations, labels on graphics, event/booking examples in calendar images. Check for typos, wrong words, and copy mismatches. Do not limit this check to template cards or the template section. Apply it to every fold that contains an image with visible text inside it.
-- [ ] **Alt text completeness — scrollable/carousel sections:** For every scrollable or carousel section, scroll through ALL items (not just the ones visible on load) and confirm each image has accurate alt text. Flag images with missing alt text or alt text that contains typos.
+- [ ] Carousels/scrollable sections: scroll through all items — none cut off or cropped on desktop or mobile
+- [ ] **Text on images (ALL folds, not just template cards):** Read all text inside UI screenshots, product mockups, calendar previews, app screens, feature fold illustrations, and graphic labels. Check for typos, wrong words, copy mismatches. Apply to every fold with an image containing visible text.
+- [ ] **Alt text completeness — scrollable/carousel sections:** Scroll through ALL items (not just visible on load) and confirm each has accurate alt text. Flag missing or incorrect alt text.
 
 **Colors & Styles:**
 - [ ] Background colors match
@@ -378,12 +387,15 @@ After saving the QA sheet as a markdown file, create a Google Sheet with the sam
    - `Technical` → `#FDEBD0`
    - `Accessibility` → `#FEF9E7`
    Use `userEnteredFormat.backgroundColor` in the `repeatCell` request. Target only the Issue Type cells in the issues table rows — not the header row or the manual checks section.
-5. Share the resulting link in the chat — as a plain, clickable URL. No exceptions. This exact format:
+5. **Store the spreadsheet ID in session memory** — you will need it for Correction Mode.
+6. Share the resulting link in the chat — as a plain, clickable URL. No exceptions. This exact format:
 
 ```
 QA sheet delivered. Here is your Google Sheet with all issues and manual checks:
 
 https://docs.google.com/spreadsheets/d/[FILE_ID]/edit
+
+If you spot anything to adjust or add — a missed issue, a wrong entry, anything — just tell me and I'll update the same sheet. You'll always have one sheet.
 ```
 
 The link must appear as a plain URL in the chat, not embedded in markdown text. Do not describe it without showing it.
@@ -392,9 +404,31 @@ The link must appear as a plain URL in the chat, not embedded in markdown text. 
 
 ---
 
+### Correction Mode (Active After Sheet Is Delivered)
+
+After delivering the QA sheet, Claude stays in Correction Mode for the rest of the session.
+
+**When the PMM requests any change to the sheet:**
+
+1. Use `get-sheet-values` on `Sheet1!A:J` to read the current issues table
+2. Identify the correct row(s) and column(s) to update
+3. Use `update-sheet-values` with the **same spreadsheet ID** to update the cell(s)
+4. If the change adds a new issue row: also apply the correct Issue Type background color via `sheets-batch-update`
+5. Confirm: "Done — same sheet, same link."
+6. **Simultaneously log to the Feedback Sheet** (ID: `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`):
+   - Follow the row-count + append pattern from the Feedback Collection section below
+   - **Type:** `correction`
+   - **Comment:** what changed, e.g., "Updated How to Fix on issue #3 — corrected replacement copy", "Added new issue: wrong alt text on fold 5 hero image"
+
+**Never create a second sheet.** Always update the existing one. The PMM ends the session with exactly one QA sheet.
+
+---
+
 ### Feedback Collection (MANDATORY — runs after every QA)
 
-After sharing the Google Sheet link, ask the PMM exactly this:
+**Mid-session feedback:** Throughout the QA session, if the PMM says anything that sounds like feedback about the QA process itself — e.g., "you missed X", "why didn't you check Y", "this output format isn't useful", "this check feels off" — log it immediately to the Feedback Sheet in the background. Use Type = `correction` if it's about a missed issue, `suggestion` if it's a process improvement idea. Do not interrupt the session flow to confirm — just log it.
+
+**Closing question:** After sharing the Google Sheet link, ask the PMM exactly this:
 
 "One quick question before we close: anything in this QA that felt off, missed something, or could be clearer? (Optional — skip if nothing comes to mind)"
 
@@ -471,6 +505,7 @@ If the page copy differs from the content doc, it is an issue — regardless of 
 - [ ] How to Fix column has all the detail, including exact replacement copy?
 - [ ] Google Sheet created and link shared in chat?
 - [ ] Google Sheet link added to the md file header?
+- [ ] Spreadsheet ID stored in session memory for Correction Mode?
 
 ---
 
