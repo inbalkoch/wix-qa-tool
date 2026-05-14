@@ -6,7 +6,6 @@ description: QA a built web page against the content doc and visual/behavioral s
 # Page QA Skill
 
 Check the page. Catch what's broken. Give the PMM a clear, actionable QA sheet.
-
 ## When to Use
 
 - A PMM says they want to QA a page
@@ -26,11 +25,11 @@ This skill requires four tools to be connected. Verify each before proceeding:
 
 2. **Browser (Claude in Chrome)** — to visit the live page and run checks
    - Test: navigate to https://www.wix.com via browser tool
-   - If not connected: guide the PMM to enable Claude in Chrome
+   - If not connected: guide the PMM to enable Claude in Chrome extension and connect it to Claude Code
 
 3. **Figma MCP** — to access the design file
    - Test: call `get_metadata` with fileKey "test" — expect an auth error, not a connection error
-   - If not connected: guide the PMM to connect the Figma integration
+   - If not connected: guide the PMM to Claude Code Settings → Integrations → Figma
 
 4. **Google Workspace MCP** — to create the QA Google Sheet and log feedback
    - Test (read): read range `Sheet1!A1:A1` from spreadsheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
@@ -39,6 +38,25 @@ This skill requires four tools to be connected. Verify each before proceeding:
    - If write fails (read passed but write failed): "Your Google account is connected but doesn't have edit access to the Feedback Sheet. Ask your QA admin to add you as an Editor before continuing."
 
 If any tool fails: stop and guide the PMM to connect it before continuing. Do not proceed with a missing tool.
+
+---
+
+## Resume Mode — For Corrections in a New Session
+
+If the PMM opens a conversation and their message involves fixing, updating, or adding to an existing QA sheet — rather than starting a fresh QA — do NOT ask for the 7 QA inputs and do NOT create a new sheet.
+
+**Signals that this is Resume Mode (not a new QA):**
+- PMM says: "fix", "update", "I have feedback", "change", "you missed", "add this", "wrong entry", "correct issue #..."
+- PMM shares a Google Sheets URL
+- PMM references a previous QA session or page that already has a QA sheet
+
+**How to enter Resume Mode:**
+1. Ask: "Share the link to the existing QA sheet and I'll update it directly."
+2. Extract the file ID from the sheet URL and store it as the active spreadsheet ID for this session.
+3. Enter Correction Mode immediately (see Correction Mode section below).
+4. Confirm: "Got it — I'm working on the existing sheet. Same link, no new sheet."
+
+**Never create a new sheet in Resume Mode.** The PMM always ends up with exactly one QA sheet per page.
 
 ---
 
@@ -75,6 +93,10 @@ A page QA has three layers:
 Each issue found becomes one row in the QA sheet.
 
 **The content doc is the sole authority for all copy.** The Figma file is used for design and layout checks only — never for verifying text. If the Figma shows different copy than the content doc, the content doc wins.
+
+**Ask PMM first.** Collect all 7 inputs before opening any link.
+
+**Check methodically.** Work top to bottom, section by section. Do not jump around.
 
 ---
 
@@ -220,10 +242,13 @@ Run these via `javascript_tool` in the browser. They do not require view-source 
 **How to run each check:**
 
 - **OG tags:** `[...document.querySelectorAll('meta[property^="og:"]')].map(m => m.getAttribute('property') + ': ' + m.getAttribute('content'))` — confirm `og:title`, `og:description`, `og:image`, `og:image:width`, `og:image:height`, and `og:site_name` are all present. Flag any that are missing.
-- **Schema markup:** `[...document.querySelectorAll('script[type="application/ld+json"]')].map(s => s.textContent)` — confirm at least one schema block is present. Log the type and flag for SEO Manager to confirm the correct schema is used.
+- **OG image dimensions:** `['og:image:width','og:image:height'].map(p => { const m = document.querySelector('meta[property="' + p + '"]'); return p + ': ' + (m ? m.content : 'MISSING'); }).join(', ')` — standard is 1200x630. Flag if the dimensions differ (e.g., 1280x630 is wrong — must be exactly 1200x630).
+- **Schema markup:** `[...document.querySelectorAll('script[type="application/ld+json"]')].map(s => s.textContent)` — confirm at least one schema block is present. Log every `@type` found. Specifically check: (1) is `BreadcrumbList` present? If not, flag it — breadcrumbs schema is expected on product pages. (2) Flag for SEO Manager to confirm HowTo, FAQPage, and any other types are correctly structured.
+- **Hreflang tags:** `[...document.querySelectorAll('link[rel="alternate"][hreflang]')].map(l => l.hreflang + ': ' + l.href)` — if the result is empty, flag as a launch issue: hreflang tags are missing. If present, log the locales found and flag for SEO Manager to confirm they are correct.
 - **External link rel attributes:** `[...document.querySelectorAll('a[href]')].filter(a => a.hostname !== location.hostname && a.rel).map(a => a.href + ' → rel=' + a.rel)` — if the SEO spec requires link equity to pass, flag any external links that include `noopener` or `noreferrer`.
 - **Image filenames:** `[...document.querySelectorAll('img')].map(i => i.src.split('/').pop())` — review filenames for SEO-meaningful naming. Flag generic filenames (e.g., `image1.jpg`, `unnamed.png`) if the SEO spec requires descriptive filenames.
-- **Hero image format/optimization:** Read the hero image `src` — flag if the extension is `.jpg` or `.png` instead of `.webp` or `.avif`. For size, use `fetch(src, {method:'HEAD'})` to get the `content-length` header and flag if over 200KB.
+- **Image sizes (all images):** Run the following async check to flag every image over 80KB: `(async () => { const imgs = [...document.querySelectorAll('img[src]')].map(i => i.src).filter(s => s.startsWith('http')); const results = await Promise.all(imgs.slice(0, 30).map(async src => { try { const r = await fetch(src, {method:'HEAD'}); const size = r.headers.get('content-length'); return size && +size > 81920 ? src.split('/').pop() + ': ' + Math.round(+size/1024) + 'KB' : null; } catch { return null; } })); return results.filter(Boolean).join('\n') || 'All checked images are under 80KB'; })()` — flag any image over 80KB. Images should be optimised to under 80KB where possible. This applies to all images, not just the hero.
+- **Hero image format:** Read the hero image `src` — flag if the extension is `.jpg` or `.png` instead of `.webp` or `.avif`.
 - [ ] **Alt text — presence and accuracy:** Run `[...document.querySelectorAll('img')].map(i => ({src: i.src.split('/').pop(), alt: i.alt}))` to get all image alt texts. Then compare each alt text against the content doc: (1) flag any image with missing alt text, (2) flag any alt text that does not match the content doc exactly (wrong words, typos, truncated). Alt text is copy — the content doc is the sole authority. For carousel/scrollable sections, scroll to load all items before running the check.
 
 ---
@@ -251,7 +276,7 @@ Mobile-specific checks:
 
 Some things cannot be verified without a real device or account. Always include this section in your output.
 
-Keep the manual checks table concise — group by category.
+Keep the manual checks table concise — group by category, do not list every individual link.
 
 **Note on links:** Link destinations that are specified in the content doc are verified in Step 3 (Destination check). Only links with NO specified URL in the content doc go in the manual checks table.
 
@@ -259,20 +284,17 @@ Keep the manual checks table concise — group by category.
 1. Links where the content doc does not specify a destination URL — PMM to confirm they go to the correct place
 2. All interactive element behaviors (accordions, carousels, search forms, template cards) — behavior cannot be verified remotely
 3. Mobile behavior on a real device
-4. Analytics / event tracking: for each CTA and interactive element, confirm (a) the click event fires, (b) each event has a unique, distinct name (two CTAs on the same fold must not share the same event name), and (c) no CTA is missing an event entirely. Flag any CTA that does not have a specified event name in the analytics spec.
+4. Event tracking: for each CTA and interactive element, confirm (a) the click event fires, (b) each event has a unique, distinct name (two CTAs on the same fold must not share the same event name), and (c) no CTA is missing an event entirely. Flag any CTA that does not have a specified event name in the analytics spec.
 5. SEO meta description in page head (exact match to content doc)
-6. Schema markup correctness — SEO Manager to confirm the schema type found in Step 3b is the correct type for this page
+6. Schema markup correctness — SEO Manager to confirm the schema types found in Step 3b (HowTo, FAQPage, BreadcrumbList, etc.) are correctly structured per spec. Provide the SEO Manager with the schema doc link if one exists.
+7. OG image content — open the og:image URL directly and confirm the image visually contains the product name. This cannot be verified programmatically. Flag if the product name is absent from the image.
+8. Core Web Vitals (CWV) — run PageSpeed Insights for both mobile and desktop: `https://pagespeed.web.dev/analysis?url=[PAGE_URL]`. Flag any CWV failures. LCP in particular must be the page content element, not the hero image. Share the PageSpeed report with the tech design owner before launch.
 
 ---
 
 ## Output: The QA Sheet
 
-**Every QA session must produce TWO outputs — both are required:**
-
-1. **Markdown file** — saved to `O-output/[page-name]-qa/qa-sheet.md`. Contains the full report: header, issues table, manual checks table, and the Google Sheet link in the header.
-2. **Google Sheet** — created from the same content and link shared directly in the chat. The sheet must contain all three sections in one sheet: header, issues table, manual checks table.
-
-Neither output is optional. Do not deliver one without the other.
+Every QA session must produce a Google Sheet delivered directly in chat. The sheet is the only deliverable — no local file is created.
 
 Produce the QA output in this exact format. Each issue is one row.
 
@@ -294,8 +316,6 @@ Team:
   Design:        [name]
   Tech Design:   [name]
 ```
-
-**Note:** The Google Sheet link goes in the header of the md file as well. Create the sheet first (see Google Sheet Delivery section below), then add the link to the md header before saving.
 
 ### Issues Table
 
@@ -369,11 +389,11 @@ Use this table to assign the correct type to each issue. Each type has a dedicat
 
 ### Google Sheet Delivery (MANDATORY)
 
-After saving the QA sheet as a markdown file, create a Google Sheet with the same content and share the link directly in the chat.
+Create a Google Sheet with the QA content and share the link directly in the chat.
 
 **The Google Sheet must include all three sections in a single sheet:**
 1. Page header (PAGE QA REPORT label, Mockup URL, Page URL, QA Date, Google Sheet link, team names)
-2. Issues table (all rows, with all 9 columns)
+2. Issues table (all rows, with all 10 columns)
 3. Manual checks table (all rows)
 
 **How to create it:**
@@ -387,7 +407,7 @@ After saving the QA sheet as a markdown file, create a Google Sheet with the sam
    - `Technical` → `#FDEBD0`
    - `Accessibility` → `#FEF9E7`
    Use `userEnteredFormat.backgroundColor` in the `repeatCell` request. Target only the Issue Type cells in the issues table rows — not the header row or the manual checks section.
-5. **Store the spreadsheet ID in session memory** — you will need it for Correction Mode.
+5. **Store the spreadsheet ID in session memory** — you will need it for Correction Mode. If the PMM returns with corrections in a new conversation, they can share the sheet link and you will pick up from there.
 6. Share the resulting link in the chat — as a plain, clickable URL. No exceptions. This exact format:
 
 ```
@@ -398,60 +418,69 @@ https://docs.google.com/spreadsheets/d/[FILE_ID]/edit
 If you spot anything to adjust or add — a missed issue, a wrong entry, anything — just tell me and I'll update the same sheet. You'll always have one sheet.
 ```
 
-The link must appear as a plain URL in the chat, not embedded in markdown text. Do not describe it without showing it.
-
-**Never skip this step.** The Google Sheet is the primary deliverable the PMM shares with the team. The markdown file is the local backup.
+**Never skip this step.** The Google Sheet is the only deliverable the PMM shares with the team.
 
 ---
 
 ### Correction Mode (Active After Sheet Is Delivered)
 
-After delivering the QA sheet, Claude stays in Correction Mode for the rest of the session.
+After delivering the QA sheet, the session is **permanently locked into Correction Mode**. This is a hard rule with no exceptions.
 
-**When the PMM requests any change to the sheet:**
+**LOCKED: Once the Google Sheet link has been shared in this session, you may not create a new Google Sheet under any circumstances — not for corrections, not for re-runs, not for any reason. Every PMM message from this point is handled in Correction Mode.**
 
-1. Use `get-sheet-values` on `Sheet1!A:J` to read the current issues table
-2. Identify the correct row(s) and column(s) to update
-3. Use `update-sheet-values` with the **same spreadsheet ID** to update the cell(s)
-4. If the change adds a new issue row: also apply the correct Issue Type background color via `sheets-batch-update`
-5. Confirm: "Done — same sheet, same link."
-6. **Simultaneously log to the Feedback Sheet** (ID: `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`):
+If the PMM asks to redo the QA or re-run anything that would normally produce a sheet — clarify: "The QA sheet is already delivered. I can update it with any changes you need. What should I fix?"
+
+**Any PMM message after sheet delivery — including corrections, missed issues, process comments, vague remarks — is handled as follows:**
+
+1. **Log to the Feedback Sheet FIRST** (ID: `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`) — before touching the QA sheet:
    - Follow the row-count + append pattern from the Feedback Collection section below
-   - **Type:** `correction`
-   - **Comment:** what changed, e.g., "Updated How to Fix on issue #3 — corrected replacement copy", "Added new issue: wrong alt text on fold 5 hero image"
+   - **Type:** `correction` if they're asking to fix or add something; `suggestion` if it's a process comment
+   - **Comment:** the PMM's exact message verbatim
+2. Use `get-sheet-values` on `Sheet1!A:J` to read the current issues table
+3. Identify the correct row(s) and column(s) to update
+4. Use `update-sheet-values` with the **same spreadsheet ID** to update the cell(s)
+5. If the change adds a new issue row: also apply the correct Issue Type background color via `sheets-batch-update`
+6. Confirm: "Done — same sheet, same link."
 
 **Never create a second sheet.** Always update the existing one. The PMM ends the session with exactly one QA sheet.
 
 ---
 
-### Feedback Collection (MANDATORY — runs after every QA)
+### Feedback Collection (MANDATORY — real-time, throughout the session)
 
-**Mid-session feedback:** Throughout the QA session, if the PMM says anything that sounds like feedback about the QA process itself — e.g., "you missed X", "why didn't you check Y", "this output format isn't useful", "this check feels off" — log it immediately to the Feedback Sheet in the background. Use Type = `correction` if it's about a missed issue, `suggestion` if it's a process improvement idea. Do not interrupt the session flow to confirm — just log it.
+Feedback is captured in real time on every PMM message after the sheet is delivered. There is no closing question. The session can end at any time without losing feedback.
 
-**Closing question:** After sharing the Google Sheet link, ask the PMM exactly this:
+**Every correction logs immediately — before fixing:**
+Every time the PMM asks to fix, change, or add anything to the QA sheet, your FIRST action in that turn is to write a row to the Feedback Sheet. Log before you touch the QA sheet.
+- **Type:** `correction`
+- **Comment:** the PMM's exact message verbatim
 
-"One quick question before we close: anything in this QA that felt off, missed something, or could be clearer? (Optional — skip if nothing comes to mind)"
+**Every process comment logs immediately:**
+If the PMM's message contains any of these trigger phrases, log it to the Feedback Sheet in the same turn — silently, without interrupting the conversation:
+- "you missed", "why didn't you", "should have", "you forgot", "not right", "incorrect"
+- "add this", "this is wrong", "this is missing", "this isn't", "this should", "you didn't check"
+- **Type:** `correction` if it points to a missed issue; `suggestion` if it's about improving the process
+- **Comment:** the PMM's message verbatim
 
-Wait for their response. Then log to the central Feedback Sheet regardless of whether they answered — even a "no feedback" session is worth a timestamp.
+**No closing question.** Do not ask "anything to add?" or "any feedback?" at the end. Every correction and process comment is captured as it happens.
 
 **Feedback Sheet ID:** `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`
 
 **How to log — follow these steps exactly:**
 
-1. Call `get-sheet-values` with `spreadsheetId = "1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo"` and `range = "Feedback!A:A"`. Count the number of rows returned. Call this `n`.
-2. If `n` is 0 (sheet is empty): first write headers to `Feedback!A1:E1` using `update-sheet-values`:
-   `["Date", "PMM", "Page URL", "Type", "Comment"]`
-   Then set `n = 1` so the data row goes to row 2.
-3. Write the feedback row to `Feedback!A{n+1}:E{n+1}` using `update-sheet-values`:
-   - **Date**: today in YYYY-MM-DD format
-   - **PMM**: PMM name from the 7 inputs
-   - **Page URL**: mockup URL from the 7 inputs
-   - **Type**: `suggestion`
-   - **Comment**: the PMM's answer verbatim, or `"No feedback provided"` if they skipped
+1. Call `get-sheet-values` with `spreadsheetId = "1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo"` and `range = "Sheet1!B:B"`. Count the number of rows returned. Call this `n`.
+2. If `n` is 0 or 1 (sheet is empty or only has the header): set `n = 2` so the data row goes to row 3 (row 1 is empty, row 2 is the header).
+3. Write the feedback row to `Sheet1!B{n+1}:G{n+1}` using `update-sheet-values`:
+   - **Date** (col B): today in YYYY-MM-DD format
+   - **PMM** (col C): PMM name from the 7 inputs
+   - **Page** (col D): mockup URL from the 7 inputs
+   - **Type** (col E): `correction` or `suggestion` (per rules above)
+   - **Comment** (col F): the PMM's message verbatim
+   - **Context** (col G): "QA session — [page name]" or "Retroactive — issue #[n]" if post-session
 
-4. If the write fails, tell the PMM: "I wasn't able to log your feedback to the central sheet — you may not have edit access. Let your QA admin know so they can add you."
+4. If the write fails, stop and say immediately: "I tried to log your feedback but the write to the central Feedback Sheet failed. You may not have edit access to sheet ID `1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo`. Let your QA admin know so they can add you as an Editor."
 
-**Do not skip this step and do not fail silently.** If it fails, say so.
+**Do not skip this step. Do not fail silently. Log before fixing.**
 
 ---
 
@@ -504,57 +533,26 @@ If the page copy differs from the content doc, it is an issue — regardless of 
 - [ ] Issue column is short — location and problem name only?
 - [ ] How to Fix column has all the detail, including exact replacement copy?
 - [ ] Google Sheet created and link shared in chat?
-- [ ] Google Sheet link added to the md file header?
 - [ ] Spreadsheet ID stored in session memory for Correction Mode?
+
 
 ---
 
 ## Common Issues to Watch For
 
-**Content:**
-- Hero headline doesn't match content doc (often updated in doc after build started)
-- CTA button text differs from content doc by one word
-- Missing legal text at the bottom of the page
-- Send-off or tagline missing final period
-- Typo on a CTA hover state or image overlay (easy to miss)
+**SEO (technical — commonly missed):**
+- Hreflang tags missing entirely — run the hreflang check in Step 3b; absence is a launch issue
+- OG image wrong dimensions — 1280x630 is wrong; must be exactly 1200x630; check `og:image:width` and `og:image:height` meta tags
+- OG image missing product name — requires opening the image URL and checking visually; goes in manual checks
+- BreadcrumbList schema missing — check schema types found in Step 3b; flag if absent on a product page
+- Images over 80KB — run the all-images size check in Step 3b; flag every image above threshold
+- CWV failures (LCP on hero image instead of page content) — cannot be checked via DOM; always goes in manual checks with a PageSpeed Insights link
+- FAQ anchor text drift — links in FAQ that exist but point to outdated or wrong anchors (e.g., "bookings" anchor should be "scheduling software")
 
-**Design:**
-- Font weight is Regular instead of SemiBold
-- Section background color is slightly off (e.g., #F7F7F7 vs. #F5F5F5)
-- Mobile image is the desktop image squeezed (wrong asset used)
-
-**Visual/Behavioral:**
-- Double space in running text
-- Text rendering twice (duplicated content block)
-- Image area blank/white — asset not connected
-- Wrong image on the page vs. Figma spec (different photo, different UI screenshot)
-- Images cut off or cropped on mobile in a carousel or scrollable section
-- "Learn more" link has no underline and is not clickable
-- Link leads to a 404 — flag immediately with the exact location and link text
-- Last card in a horizontal scroll is half-cut
-
-**Text on images (common miss — applies to ALL folds, not just template cards):**
-- Typo in a label or UI element visible inside a product screenshot in a feature fold (e.g., "participents" in a calendar preview image)
-- Participant/attendee names misspelled on a calendar or booking image
-- CTA hover state on an image card has a typo (e.g., "Lee Mor terapist" instead of "Lee Mor therapist")
-- App screen or mockup shows placeholder text that was never replaced
-- Text inside a feature fold's illustration or UI mockup is easy to miss — always zoom in and read it
-
-**Alt text:**
-- Alt text is copy — treat it the same as any other text on the page. The content doc specifies the correct alt text. Compare every image alt against the content doc.
-- Items not visible on initial load (further in a carousel) may have missing or wrong alt text — scroll to the end to load all items before running the alt check
-- Typos in alt text (e.g., "tatoos", "terapist") are content issues, not just accessibility issues — log them in the issues table
-
-**Inline anchor links:**
-- A word the content doc specifies should be hyperlinked (e.g., "site plan") exists on the page but is not actually clickable
-- The wrong word in a sentence is linked instead of the specified word
-
-**Sub line count:**
-- One card sub in a fold wraps to 3 lines while all others are 2 lines — signals copy too long or spacing issue
-
-**Analytics:**
-- Two CTAs on the same fold with identical event names — must be distinct
-- A search CTA (e.g., domain search) has no analytics event at all
+**FAQ (common miss):**
+- Double spaces between words in FAQ answers — check specifically in FAQ section, not just general body
+- Missing paragraph breaks between FAQ answer blocks — compare spacing against content doc; missing breaks are a content issue
+- FAQ copy not synced to latest content doc version — always compare FAQ section against the most current content doc, not a cached version
 
 ---
 
@@ -566,35 +564,15 @@ After every QA session, Claude automatically logs feedback to a central sheet vi
 - Corrections made during the session — any time a PMM says "you missed this", "that's wrong", "can you also check..."
 - The PMM's answer to the closing question: *"Anything that felt off, missed something, or could be clearer?"*
 
-Each item becomes one row: Date / PMM name / Page URL / Type (correction or suggestion) / Comment / Context.
+Each item becomes one row written to `Sheet1!B:G`: Date / PMM name / Page / Type (correction or suggestion) / Comment / Context. Column A is empty — data starts from column B.
 
 **Central Feedback Sheet:**
 `https://docs.google.com/spreadsheets/d/1637r1DgyHs_upfx91kqfGjMFDTs1rBJMibAdVJivjuo/edit`
 
-**Where these instructions live:**
-The logging logic is in the GitHub repo at `.claude/commands/qa.md` (Step 3) and the correction-tracking rules are in the repo's `CLAUDE.md`. These files are downloaded to every PMM's folder — they run automatically, nothing the PMM needs to do.
-
 **For the maintainer:**
 - Set up email notifications in the Feedback Sheet: Tools → Notification settings → Any changes → Email immediately
-- The sheet must be shared with all PMMs (Editor access) or the logging will fail silently during setup
-
----
-
-## Integration with ABC-TOM
-
-When using this skill:
-
-1. **Ask PMM first** — Collect all 7 inputs before opening any link
-2. **Check methodically** — Top to bottom, section by section, don't jump around
-3. **Output to O-output** — Save the QA sheet in `O-output/[page-name]-qa/`
-4. **Flag for Loop** — Note any patterns in how pages are commonly built wrong, update `M-memory/learning-log.md`
+- The sheet must be shared with all PMMs (Editor access) or the logging step will fail
 
 ---
 
 *Catch it now. Not after launch.*
-
----
-
-> **© Tom Even**
-> Workshops & future dates: [www.getagents.today](https://www.getagents.today)
-> Newsletter: [www.agentsandme.com](https://www.agentsandme.com)
